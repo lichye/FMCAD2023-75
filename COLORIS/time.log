@@ -1,0 +1,5 @@
+Base cases time is 288 seconds
+Proof for attacker inductive is 123 seconds
+Proof for victime inductive time is 256 seconds
+Proof for non-interference Step is 4 seconds
+For all, time is 671 seconds

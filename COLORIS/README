@@ -1,0 +1,15 @@
+
+## Files for COLORIS
+
+### UCLID5 from Docker:
+
+1. Install the Docker setup for UCLID5 from `https://hub.docker.com/r/kkmc/uclid5docker/tags`
+2. Run the script: `./run_all_docker.sh`
+3. Results: The contents of `all.proof` provide proofs results and `time.log` logs the runtime for the proofs. Each file's proof will go to xxx.proof
+
+
+### Run without docker:
+
+1. Download and build UCLID5 from source from [GitHub repo](https://github.com/uclid-org/uclid). Note that the provided binaries will not work.
+2. Run the script: `./run_all.sh`
+3. Result are recorded similar to Docker case.

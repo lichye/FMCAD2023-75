@@ -1,0 +1,297 @@
+// This is the common module for the normal NRU cache design
+// It contains all the types and constants that are used in the design
+module common {
+    type time_t = bv4;
+    type addr_t = bv32;
+    type ind_t  = bv8;//256 direct
+    type clr_t  = bv4;
+    type tag_t  = bv22;
+    type way_t  = bv2;
+    type map_t  = [way_t] boolean;
+
+    type userRequest_t = record {
+        valid: boolean,
+        address: addr_t
+    };
+    type cacheLine_t = record {
+        tag: tag_t,
+        valid: boolean
+    };
+    type cacheWays_t = [ind_t]cacheLine_t;
+}
+
+// This is the main module for the cache
+module cache {
+    // Import all the common definitions
+    type * = common.*;
+
+    const way_low   : way_t = 0bv2;
+    const way_high  : way_t = 3bv2;
+
+    const index_low     : ind_t = 0bv8;
+    const index_high    : ind_t = 255bv8;
+
+    // Input
+    input userRequest: userRequest_t;
+
+    // Main part of the cache
+    var cache: [way_t]cacheWays_t;
+	var metadata: [ind_t]map_t;
+
+    // Temporary variables
+    var metadataLine : [bv3] boolean;
+    var updateLineMetadata: [bv3] boolean;
+
+    var victimWay : way_t;
+    
+    // This part is virtual data (temporary variables)
+    var hitLine : ind_t;
+    var hit : boolean;
+    var hitWays : way_t;
+    var hitTag : tag_t;
+    var reqTag  : tag_t;
+    var address  : addr_t;
+
+    // All zero cacheline and cacheway
+    const null_cacheline    : cacheLine_t;
+    const null_cacheway     : cacheWays_t;
+    const null_map         : map_t;
+
+    // Convert from address (bv64) to an index in the cache (bv5)
+    // Drop the lower 3-bits of offset and take the rest
+    define addr_to_index (addr: bv32) : ind_t = addr[9:2];
+    // Convert from address to the the tag 
+    // Top 56 bits
+    define addr_to_tag (addr: bv32) : tag_t = addr[31:10];
+
+    // Uninterpreted function (any definition is possible)
+    function f_update_hit (hit_way: way_t, prev_mdata: map_t) : map_t;
+    function f_update_miss (hit_way: way_t, prev_mdata: map_t) : map_t;
+
+    // ======================================================
+    // External requests/actions
+    // ======================================================
+
+
+    // initialize the cache
+    procedure initializeCache ()
+        modifies cache, metadata, hit;
+    {
+        hit = false;
+        for (i: way_t) in range(way_low, way_high) {
+            cache[i] = null_cacheway;
+        }
+        for (j: ind_t) in range(index_low, index_high){
+            metadata[j] = null_map;
+        }
+    }
+
+    procedure serveUserRequest (userreq : userRequest_t)
+        modifies metadata,cache;
+        modifies victimWay,updateLineMetadata;
+        modifies hit,hitWays,metadataLine,hitLine,hitTag,reqTag;
+        modifies address;
+    {
+        address = userreq.address;
+        hitLine = addr_to_index(userreq.address);
+        reqTag = addr_to_tag(userreq.address);
+
+        hit = false;
+        for (way_id : way_t) in range(way_low, way_high) {
+             if (cache[way_id][hitLine].tag == reqTag && cache[way_id][hitLine].valid) {
+                hitTag = cache[way_id][hitLine].tag;
+                hit = true;
+                hitWays = way_id;
+            }
+        }
+        if (hit) {
+            call updateNRUTree_hit (hitWays, hitLine);
+        } else {
+            call (victimWay) = findVictim(hitLine);
+            call updateNRUTree_miss (victimWay, hitLine);
+            call writeCache(victimWay,hitLine,userreq.address);
+        }
+    }
+
+    procedure updateNRUTree_hit (hit_ways: way_t, hit_line: ind_t) returns ()
+        modifies metadata;
+    {
+        // var temp_metadata: map_t;
+        // temp_metadata = metadata[hit_line];
+
+        // temp_metadata[hit_ways] = true;
+
+        metadata[hit_line] = f_update_hit(hit_ways, metadata[hit_line]);
+    }
+
+    procedure updateNRUTree_miss (hit_ways: way_t, hit_line: ind_t) returns ()
+        modifies metadata;
+    {
+        // var temp_metadata: map_t;
+        // temp_metadata = metadata[hit_line];
+
+        // temp_metadata[hit_ways] = true;
+
+        metadata[hit_line] = f_update_miss(hit_ways, metadata[hit_line]);
+    }
+
+    procedure updateNRUTree(hit_ways: way_t, hit_line: ind_t) returns ()
+        modifies metadata;
+    {
+        var temp_metadata: map_t;
+        temp_metadata = metadata[hit_line];
+
+        temp_metadata[hit_ways] = true;
+
+        metadata[hit_line] = temp_metadata;
+    }
+
+    procedure findVictim (hit_line: ind_t) returns (victimWay: way_t)
+        // modifies metadata;
+    {
+        var temp_metadata: map_t;
+        victimWay = 0bv2;
+
+        temp_metadata = metadata[hit_line];
+        
+        for (i: way_t) in range(way_low, way_high) {
+            //if one way is not accessed
+            if(!temp_metadata[i]){
+                victimWay = i;
+            }
+        }
+
+        // metadata[hit_line] = null_map;
+    }
+    
+    procedure writeCache(victimWay: way_t, hitLine: ind_t,address: addr_t)
+    modifies cache,hitLine;
+    {
+        var virtualCacheWay : cacheWays_t;
+        var virtualCacheLine : cacheLine_t;
+        var reqtag : tag_t;
+
+        reqtag = addr_to_tag(address);
+
+        virtualCacheWay = cache[victimWay];
+        virtualCacheLine = virtualCacheWay[hitLine];
+        
+        virtualCacheLine.tag = reqtag;
+        virtualCacheLine.valid = true;
+
+        virtualCacheWay[hitLine] = virtualCacheLine;
+        cache[victimWay] = virtualCacheWay;
+    }
+
+    init {
+        // Initial cache state is unconstrained, so can we check
+        assume (null_cacheline == const_record(tag := 0bv22,valid :=false));
+        assume (null_cacheway == const(null_cacheline, [ind_t]cacheLine_t));
+        assume (null_map == const(false, [way_t]boolean));
+        call initializeCache();
+    }
+
+
+	next {
+        if (userRequest.valid) {
+            call serveUserRequest(userRequest);
+        }
+    }
+}
+
+module main {
+    type * = common.*;
+
+    var addr_0 : userRequest_t;
+    var addr_1 : userRequest_t;
+    var clrAddr: addr_t;
+
+    var Addr  : addr_t;
+    var Addr_0: addr_t;
+    var Addr_1: addr_t;
+
+    var victim: boolean;   
+    
+    const index_low     : ind_t = 0bv8;
+    const index_high    : ind_t = 255bv8;
+    
+    const way_low   : way_t = 0bv2;
+    const way_high  : way_t = 3bv2;
+
+    // DAWG instances
+    instance cache_0 : cache(
+        userRequest:    (addr_0)
+    );
+
+    instance cache_1 : cache(
+        userRequest:    (addr_1)
+    );
+
+    
+
+    procedure doOneStep()
+        modifies addr_0,addr_1;
+        modifies Addr_0,Addr_1,Addr;
+    {
+        //if it is victim, then we can visit different address
+        if(victim){
+            havoc Addr_0;
+            havoc Addr_1;
+            assume(Addr_0[9:6]!=clrAddr[9:6]);
+            assume(Addr_1[9:6]!=clrAddr[9:6]);
+            addr_0.valid = true;
+            addr_0.address = Addr_0;
+            addr_1.valid = true;
+            addr_1.address = Addr_1;
+        }
+        //if it is attacker, we can visit the same address
+        else{
+            havoc Addr;
+            assume(Addr[9:6]==clrAddr[9:6]);
+            addr_0.valid = true;
+            addr_0.address = Addr;
+            addr_1.valid = true;
+            addr_1.address = Addr;
+        }
+    }
+
+    procedure checkproperty()
+    {
+        if(!victim){
+            assert(cache_0.hit == cache_1.hit);
+        }
+    }
+
+    init {
+        havoc clrAddr;
+        addr_0.valid = false;
+        addr_1.valid = false;
+        // init (cache_0);
+        // init (cache_1);
+    }
+
+    next {
+        havoc victim;
+        call doOneStep();
+        next (cache_0);
+        next (cache_1);
+        call checkproperty();
+        //call assertInvariantClrData();
+    }
+    //property my_prop: (cache_0.hit == cache_1.hit);
+
+    control {
+        v = unroll(3);
+        check;
+        v.print_cex(
+            cache_0.hit,
+            cache_0.hitLine,
+            cache_0.hitTag,
+            cache_1.cache,
+
+            cache_1.hit,
+            cache_1.hitLine,
+            cache_1.hitTag
+        );
+    }
+}

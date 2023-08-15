@@ -1,0 +1,19 @@
+## Case Study Artifacts for the paper "Modelling and Verification of Security-Oriented Resource Partitioning Schemes"
+
+### Directory layout:
+
+```
+.  
+├── COLORIS (COLORIS model and proof scripts using UCLID5)
+├── DAWG (DAWG model and proof scripts using Verilog + SymbiYosys)
+└── README.md
+```
+
+Each directory also has a corresponding README and run scripts.
+
+### Prerequisites: 
+   
+* SymbiYosys: You can install the OSS CAD suite from [the GitHub page](https://github.com/YosysHQ/oss-cad-suite-build). For your convenience we provide a script (`run_symbiyosys.sh`) in `DAWG` that grabs a recent version of the suite.
+* UCLID5: You can access the UCLID5 tool from the GitHub page [here](https://github.com/uclid-org/uclid). Note that this experimentation suite requires a recent version of UCLID5. Hence you will need to either setup a Docker-based UCLID5 version (from [here](https://hub.docker.com/r/kkmc/uclid5docker/tags)) or build UCLID5 binaries from from source (binary releases will not work).
+   
+
